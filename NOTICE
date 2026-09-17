@@ -1,0 +1,11 @@
+commonlibf4-linux-cross
+Copyright 2026 hxef
+
+repo/packages/s/spdlog/xmake.lua is adapted from the spdlog package of
+xmake-repo (https://github.com/xmake-io/xmake-repo), whose NOTICE reads:
+
+    A package repository based on xmake
+    Copyright 2017-2018 The Xmake Open Source Community
+
+    This product includes software developed by The Xmake Open Source
+    Community (https://xmake.io/).
