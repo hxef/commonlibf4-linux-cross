@@ -21,8 +21,10 @@ toolchain("xwin-clang-cl")
     -- files (.rc).
     set_toolset("cc", "clang-cl")
     set_toolset("cxx", "clang-cl")
-    set_toolset("ld", "lld-link")
-    set_toolset("sh", "lld-link")
+    -- bin/lld-link runs lld-link and keeps the full paths of library folders
+    -- out of the PDB.
+    set_toolset("ld", path.join(os.scriptdir(), "bin", "lld-link"))
+    set_toolset("sh", path.join(os.scriptdir(), "bin", "lld-link"))
     set_toolset("ar", "llvm-ar")
     set_toolset("mrc", "llvm-rc")
 
@@ -63,6 +65,30 @@ toolchain("xwin-clang-cl")
         }) do
             toolchain:add("ldflags", "-libpath:" .. path.join(xwin, dir))
             toolchain:add("shflags", "-libpath:" .. path.join(xwin, dir))
+        end
+
+        -- The PDB, the debug file next to the DLL, ships with the plugin, and
+        -- full paths in it would show the user name. So the compiler records
+        -- the folder it runs in as ".", the project as ".", the xwin folder as
+        -- xwin and the rest of the home folder as HOME, and leaves out its own
+        -- command line. The last map that fits a path wins, so the home
+        -- folder's map comes before the maps for folders inside it. Never map
+        -- to ~, because clang turns a leading ~ back into the home folder in
+        -- the names of lambdas.
+        toolchain:add("cxflags", "/clang:-fdebug-compilation-dir=.")
+        local home = os.getenv("HOME")
+        if home then
+            toolchain:add("cxflags", "/clang:-ffile-prefix-map=" .. home .. "=HOME")
+        end
+        toolchain:add("cxflags", "/clang:-ffile-prefix-map=" .. xwin .. "=xwin")
+        toolchain:add("cxflags", "/clang:-ffile-prefix-map=" .. os.projectdir() .. "=.")
+        toolchain:add("cxflags", "/clang:-gno-codeview-command-line")
+
+        -- The DLL names its PDB by file name only, and lld-link keeps relative
+        -- paths relative instead of putting its own folder in front.
+        for _, flags in ipairs({ "ldflags", "shflags" }) do
+            toolchain:add(flags, "/pdbaltpath:%_PDB%")
+            toolchain:add(flags, "/pdbsourcepath:.")
         end
     end)
 toolchain_end()

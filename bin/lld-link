@@ -1,0 +1,68 @@
+#!/bin/sh
+# xmake runs this in place of lld-link, which writes the folder of every
+# library it links into the PDB. Those folders sit in ~/.xwin and ~/.xmake and
+# would show the user name, so each -libpath with a full path is passed as a
+# numbered link in <output folder>/.libpath/<output file>/ instead. Number the
+# links only: a name made from the real path, even a checksum of it, can be
+# guessed back to the user name.
+
+# Find the output file that -out: names. xmake hands a long command line over
+# as a response file, an @file with 1 argument per line, so look there too.
+out=
+for arg; do
+	case $arg in
+		-out:* | /out:*) out=${arg#*:} ;;
+		@*) out=$(sed -n 's/^"\{0,1\}[-/]out:\([^"]*\)"\{0,1\}$/\1/p' "${arg#@}" | tail -n 1) ;;
+	esac
+	[ -n "$out" ] && break
+done
+# 1 folder per output file, so 2 outputs linked at the same time never
+# overwrite each other's links.
+dir=$(dirname "${out:-.}")/.libpath/$(basename "${out:-lld-link}")
+n=0
+
+# Sets swapped to its argument. For a -libpath that holds a full path, it
+# first makes the next numbered link to that folder, and sets swapped to a
+# -libpath to the link instead.
+swap() {
+	swapped=$1
+	case $1 in
+		-libpath:/* | /libpath:/*)
+			n=$((n + 1))
+			mkdir -p "$dir"
+			ln -sfn "${1#*:}" "$dir/$n"
+			swapped=-libpath:$dir/$n
+			;;
+	esac
+}
+
+# Swap every argument. A response file gets a copy with every line swapped,
+# and a quoted line keeps its quotes. Each pass takes the first argument off
+# the list and adds its swapped form at the end, so the order stays the same.
+for arg; do
+	shift
+	case $arg in
+		@*)
+			mkdir -p "$dir"
+			rsp=$dir/$(basename "${arg#@}")
+			while IFS= read -r line || [ -n "$line" ]; do
+				case $line in
+					\"*\")
+						line=${line#\"}
+						swap "${line%\"}"
+						printf '"%s"\n' "$swapped"
+						;;
+					*)
+						swap "$line"
+						printf '%s\n' "$swapped"
+						;;
+				esac
+			done < "${arg#@}" > "$rsp"
+			swapped=@$rsp
+			;;
+		*) swap "$arg" ;;
+	esac
+	set -- "$@" "$swapped"
+done
+
+exec lld-link "$@"
